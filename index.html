@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CogniGraph AI — Live Knowledge Graph Builder & Gap Locator</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Vis.js Network for Graph Visualization -->
+  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            darkbg: '#080B11',
+            glasscard: 'rgba(18, 24, 38, 0.75)',
+            accentcyan: '#00F2FE',
+            accentred: '#FF3366',
+            accentemerald: '#10B981',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background-color: #080B11; color: #E2E8F0; font-family: 'Inter', sans-serif; }
+    .glass { background: rgba(18, 24, 38, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+    #network-canvas { width: 100%; height: 100%; background: radial-gradient(circle at center, #0d1527 0%, #080B11 100%); }
+    .pulse-red { animation: pulseRed 1.8s infinite; }
+    @keyframes pulseRed {
+      0% { box-shadow: 0 0 0 0 rgba(255, 51, 102, 0.7); }
+      70% { box-shadow: 0 0 0 14px rgba(255, 51, 102, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(255, 51, 102, 0); }
+    }
+  </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+
+  <!-- Top Navigation Header -->
+  <header class="h-16 border-b border-white/10 glass flex items-center justify-between px-6 z-20">
+    <div class="flex items-center space-x-3">
+      <div class="w-9 h-9 rounded-lg bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center font-bold text-lg text-white shadow-lg shadow-cyan-500/30">
+        <i class="fa-solid fa-diagram-project"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-lg tracking-wide text-white flex items-center gap-2">
+          CogniGraph <span class="text-xs bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 px-2 py-0.5 rounded-full uppercase tracking-wider">AI Live</span>
+        </h1>
+        <p class="text-xs text-slate-400">Knowledge Graph & Prerequisite Gap Locator</p>
+      </div>
+    </div>
+
+    <!-- Live Firebase Sync Indicator -->
+    <div class="flex items-center space-x-4">
+      <div class="flex items-center space-x-2 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-full text-xs text-emerald-400">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+        <span class="font-medium"><i class="fa-solid fa-cloud"></i> Firebase Sync: Active</span>
+      </div>
+      <button onclick="openIngestModal()" class="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold px-4 py-2 rounded-lg text-xs transition-all shadow-md shadow-cyan-500/20 flex items-center gap-2">
+        <i class="fa-solid fa-file-arrow-up"></i> Ingest Textbook/Chapter
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Grid Workspace -->
+  <main class="flex-1 grid grid-cols-12 relative overflow-hidden">
+    
+    <!-- Left Panel: Concept Graph Controls & Stats -->
+    <div class="col-span-3 border-r border-white/10 glass p-4 flex flex-col justify-between z-10 space-y-4">
+      <div>
+        <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Graph Telemetry</h2>
+        <div class="grid grid-cols-2 gap-2 mb-4">
+          <div class="glass p-3 rounded-xl border border-white/5">
+            <span class="text-xs text-slate-400">Nodes Extracted</span>
+            <div id="stat-nodes" class="text-xl font-bold text-cyan-400 mt-1">6</div>
+          </div>
+          <div class="glass p-3 rounded-xl border border-white/5">
+            <span class="text-xs text-slate-400">Prerequisites</span>
+            <div id="stat-edges" class="text-xl font-bold text-blue-400 mt-1">6</div>
+          </div>
+        </div>
+
+        <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Legend</h2>
+        <div class="space-y-2 text-xs">
+          <div class="flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+            <span class="flex items-center gap-2 text-emerald-300"><span class="w-3 h-3 rounded-full bg-emerald-400"></span> Mastered Concept</span>
+            <span class="font-mono text-slate-400">OK</span>
+          </div>
+          <div class="flex items-center justify-between p-2 rounded-lg bg-slate-800/50 border border-slate-700">
+            <span class="flex items-center gap-2 text-slate-300"><span class="w-3 h-3 rounded-full bg-slate-400"></span> Untested Prerequisite</span>
+            <span class="font-mono text-slate-400">Pending</span>
+          </div>
+          <div class="flex items-center justify-between p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 pulse-red">
+            <span class="flex items-center gap-2 text-rose-300"><span class="w-3 h-3 rounded-full bg-rose-500"></span> Missing Learning Gap</span>
+            <span class="font-mono text-rose-400 font-bold">CRITICAL</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Preset Selector -->
+      <div class="border-t border-white/10 pt-4">
+        <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-2">Load Preset Course</span>
+        <select id="preset-select" onchange="loadPresetCourse()" class="w-full bg-slate-900 border border-white/10 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
+          <option value="dsa">Data Structures: Trees & Recursion</option>
+          <option value="physics">Physics: Quantum Mechanics</option>
+          <option value="calculus">Calculus: Derivatives & Integrals</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Center Stage: Dynamic Graph Canvas -->
+    <div class="col-span-6 relative">
+      <div id="network-canvas"></div>
+      <div class="absolute bottom-4 left-4 glass px-3 py-1.5 rounded-lg text-xs text-slate-400 flex items-center gap-2 pointer-events-none">
+        <i class="fa-solid fa-hand-pointer text-cyan-400"></i> Drag nodes to reorganize | Scroll to zoom
+      </div>
+    </div>
+
+    <!-- Right Panel: Adaptive Assessment & Remediation Panel -->
+    <div class="col-span-3 border-l border-white/10 glass p-4 flex flex-col justify-between z-10 overflow-y-auto">
+      <div>
+        <div class="flex items-center justify-between mb-4 border-b border-white/10 pb-3">
+          <h2 class="font-bold text-sm text-white flex items-center gap-2">
+            <i class="fa-solid fa-graduation-cap text-cyan-400"></i> Adaptive Gap Quiz
+          </h2>
+          <span id="quiz-progress" class="text-xs text-slate-400">Q 1 of 2</span>
+        </div>
+
+        <!-- Quiz Question Box -->
+        <div id="quiz-container" class="space-y-4">
+          <div class="bg-slate-900/80 p-3.5 rounded-xl border border-white/10">
+            <span id="quiz-concept" class="text-xs text-cyan-400 font-mono font-semibold block mb-1">Testing Node: In-Order Traversal</span>
+            <p id="quiz-question" class="text-xs text-slate-200 font-medium">When performing an In-Order traversal on a Binary Search Tree, what prerequisite mechanism prevents an infinite call stack?</p>
+          </div>
+
+          <div id="quiz-options" class="space-y-2">
+            <!-- Options populated dynamically -->
+          </div>
+        </div>
+
+        <!-- Gap Remediation Alert -->
+        <div id="remediation-box" class="hidden mt-4 p-4 rounded-xl bg-rose-950/40 border border-rose-500/30 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-rose-400 uppercase tracking-wide flex items-center gap-1.5">
+              <i class="fa-solid fa-circle-exclamation"></i> Learning Gap Located
+            </span>
+          </div>
+          <p id="gap-description" class="text-xs text-slate-300">Missing prerequisite found.</p>
+          <div class="bg-black/40 p-2.5 rounded-lg border border-white/5">
+            <span class="text-[10px] text-slate-400 uppercase font-semibold block">Suggested Remediation:</span>
+            <span id="remediation-topic" class="text-xs text-cyan-300 font-bold">Recursion Base Cases</span>
+          </div>
+        </div>
+      </div>
+
+      <button id="next-q-btn" onclick="nextQuestion()" class="w-full mt-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-2.5 rounded-xl text-xs transition-all border border-white/10 flex items-center justify-center gap-2">
+        <span>Next Question</span> <i class="fa-solid fa-arrow-right"></i>
+      </button>
+    </div>
+  </main>
+
+  <!-- Ingest Modal -->
+  <div id="ingest-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="glass max-w-lg w-full p-6 rounded-2xl border border-white/10 space-y-4">
+      <div class="flex justify-between items-center">
+        <h3 class="font-bold text-base text-white flex items-center gap-2">
+          <i class="fa-solid fa-brain text-cyan-400"></i> Extract Knowledge Graph from Content
+        </h3>
+        <button onclick="closeIngestModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <p class="text-xs text-slate-400">Paste textbook notes or chapter summary. The system extracts key concepts into new graph nodes.</p>
+      <textarea id="raw-text-input" rows="5" class="w-full bg-slate-900 border border-white/10 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono" placeholder="e.g. Advanced Graph Optimization requires Breadth First Search and Priority Queues..."></textarea>
+      <div class="flex justify-end gap-2">
+        <button onclick="closeIngestModal()" class="px-4 py-2 text-xs text-slate-400 hover:text-white">Cancel</button>
+        <button onclick="processIngest()" class="px-4 py-2 text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg transition-all flex items-center gap-2">
+          <i class="fa-solid fa-wand-magic-sparkles"></i> Extract & Inject Nodes
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let network = null;
+    let nodesDataSet = null;
+    let edgesDataSet = null;
+
+    const coursesData = {
+      dsa: {
+        nodes: [
+          { id: 1, label: "Pointers & Memory", color: { background: "#06B6D4", border: "#22D3EE" }, font: { color: "#FFF" } },
+          { id: 2, label: "Recursion Base Cases", color: { background: "#334155", border: "#64748B" }, font: { color: "#FFF" } },
+          { id: 3, label: "Call Stack Execution", color: { background: "#334155", border: "#64748B" }, font: { color: "#FFF" } },
+          { id: 4, label: "Binary Search Trees", color: { background: "#334155", border: "#64748B" }, font: { color: "#FFF" } },
+          { id: 5, label: "In-Order Traversal", color: { background: "#334155", border: "#64748B" }, font: { color: "#FFF" } },
+          { id: 6, label: "Graph BFS / DFS", color: { background: "#334155", border: "#64748B" }, font: { color: "#FFF" } }
+        ],
+        edges: [
+          { from: 1, to: 2, arrows: "to" },
+          { from: 2, to: 3, arrows: "to" },
+          { from: 1, to: 4, arrows: "to" },
+          { from: 3, to: 5, arrows: "to" },
+          { from: 4, to: 5, arrows: "to" },
+          { from: 5, to: 6, arrows: "to" }
+        ],
+        quiz: [
+          {
+            nodeId: 5,
+            concept: "In-Order Traversal",
+            prerequisiteNodeId: 2,
+            prerequisiteName: "Recursion Base Cases",
+            question: "When performing an In-Order traversal on a BST, what prerequisite mechanism prevents an infinite call stack loop?",
+            options: [
+              { text: "A base condition stopping recursive function calls", correct: true },
+              { text: "Allocating extra heap memory for every child", correct: false },
+              { text: "Converting the BST into a doubly-linked list", correct: false }
+            ]
+          },
+          {
+            nodeId: 4,
+            concept: "Binary Search Trees",
+            prerequisiteNodeId: 1,
+            prerequisiteName: "Pointers & Memory",
+            question: "Which memory allocation concept strictly allows dynamic creation of child BST nodes?",
+            options: [
+              { text: "Heap memory pointers referencing child addresses", correct: true },
+              { text: "Static array index pre-allocation", correct: false },
+              { text: "CPU Register cache locking", correct: false }
+            ]
+          }
+        ]
+      },
+      physics: {
+        nodes: [
+          { id: 101, label: "Classical Mechanics", color: { background: "#06B6D4", border: "#22D3EE" }, font: { color: "#FFF" } },
+          { id: 102, label: "Wave Equations", color: { background: "#334155", border: "#64748B" }, font: { color: "#FFF" } },
+          { id: 103, label: "Schrödinger Equation", color: { background: "#334155", border: "#64748B" }, font: { color: "#FFF" } },
+          { id: 104, label: "Quantum Tunneling", color: { background: "#334155", border: "#64748B" }, font: { color: "#FFF" } }
+        ],
+        edges: [
+          { from: 101, to: 102, arrows: "to" },
+          { from: 102, to: 103, arrows: "to" },
+          { from: 103, to: 104, arrows: "to" }
+        ],
+        quiz: [
+          {
+            nodeId: 104,
+            concept: "Quantum Tunneling",
+            prerequisiteNodeId: 102,
+            prerequisiteName: "Wave Equations",
+            question: "Quantum tunneling relies on particles exhibiting wave-particle duality. Which prerequisite mathematical concept models this probability amplitude?",
+            options: [
+              { text: "Continuous complex wave functions", correct: true },
+              { text: "Newtonian linear momentum equations", correct: false },
+              { text: "Thermodynamic entropy constants", correct: false }
+            ]
+          }
+        ]
+      },
+      calculus: {
+        nodes: [
+          { id: 201, label: "Limits & Continuity", color: { background: "#06B6D4", border: "#22D3EE" }, font: { color: "#FFF" } },
+          { id: 202, label: "Power Rule Differentiation", color: { background: "#334155", border: "#64748B" }, font: { color: "#FFF" } },
+          { id: 203, label: "Chain Rule", color: { background: "#334155", border: "#64748B" }, font: { color: "#FFF" } },
+          { id: 204, label: "Partial Derivatives", color: { background: "#334155", border: "#64748B" }, font: { color: "#FFF" } }
+        ],
+        edges: [
+          { from: 201, to: 202, arrows: "to" },
+          { from: 202, to: 203, arrows: "to" },
+          { from: 203, to: 204, arrows: "to" }
+        ],
+        quiz: [
+          {
+            nodeId: 204,
+            concept: "Partial Derivatives",
+            prerequisiteNodeId: 203,
+            prerequisiteName: "Chain Rule",
+            question: "When differentiating multivariable functions with dependent inner variables, which technique is essential?",
+            options: [
+              { text: "Multivariable Chain Rule expansion", correct: true },
+              { text: "Basic polynomial additions", correct: false },
+              { text: "Geometric angle bisectors", correct: false }
+            ]
+          }
+        ]
+      }
+    };
+
+    let currentCourse = coursesData.dsa;
+    let currentQuizIndex = 0;
+
+    function initGraph() {
+      const container = document.getElementById("network-canvas");
+      nodesDataSet = new vis.DataSet(currentCourse.nodes);
+      edgesDataSet = new vis.DataSet(currentCourse.edges);
+
+      document.getElementById("stat-nodes").innerText = currentCourse.nodes.length;
+      document.getElementById("stat-edges").innerText = currentCourse.edges.length;
+
+      const data = { nodes: nodesDataSet, edges: edgesDataSet };
+      const options = {
+        nodes: {
+          shape: "dot",
+          size: 24,
+          font: { size: 13, face: "Inter", color: "#FFFFFF" },
+          borderWidth: 2,
+          shadow: true
+        },
+        edges: {
+          width: 2,
+          color: { color: "rgba(255,255,255,0.2)", highlight: "#00F2FE" },
+          smooth: { type: "cubicBezier" }
+        },
+        physics: {
+          stabilization: false,
+          barnesHut: { gravitationalConstant: -3000, springLength: 95 }
+        }
+      };
+
+      network = new vis.Network(container, data, options);
+      loadQuizQuestion();
+    }
+
+    function loadPresetCourse() {
+      const selected = document.getElementById("preset-select").value;
+      if (coursesData[selected]) {
+        currentCourse = coursesData[selected];
+        currentQuizIndex = 0;
+        document.getElementById("remediation-box").classList.add("hidden");
+        initGraph();
+      }
+    }
+
+    function loadQuizQuestion() {
+      const qData = currentCourse.quiz[currentQuizIndex];
+      const progressSpan = document.getElementById("quiz-progress");
+
+      if (!qData) {
+        progressSpan.innerText = "Complete";
+        document.getElementById("quiz-container").innerHTML = `
+          <div class="text-xs text-emerald-400 p-4 font-bold text-center bg-emerald-500/10 rounded-xl border border-emerald-500/20">
+            <i class="fa-solid fa-circle-check text-lg block mb-2"></i> Course Diagnostic Complete! All gaps localized.
+          </div>`;
+        return;
+      }
+
+      progressSpan.innerText = `Q ${currentQuizIndex + 1} of ${currentCourse.quiz.length}`;
+      document.getElementById("quiz-concept").innerText = "Testing Node: " + qData.concept;
+      document.getElementById("quiz-question").innerText = qData.question;
+      
+      const optContainer = document.getElementById("quiz-options");
+      optContainer.innerHTML = "";
+
+      qData.options.forEach((opt) => {
+        const btn = document.createElement("button");
+        btn.className = "w-full text-left p-2.5 rounded-lg bg-slate-800/60 hover:bg-slate-700/80 border border-white/5 text-xs text-slate-200 transition-all";
+        btn.innerText = opt.text;
+        btn.onclick = () => answerQuiz(opt.correct, qData);
+        optContainer.appendChild(btn);
+      });
+    }
+
+    function answerQuiz(isCorrect, qData) {
+      if (isCorrect) {
+        nodesDataSet.update({ id: qData.nodeId, color: { background: "#10B981", border: "#34D399" } });
+        document.getElementById("remediation-box").classList.add("hidden");
+      } else {
+        nodesDataSet.update({ 
+          id: qData.prerequisiteNodeId, 
+          color: { background: "#FF3366", border: "#FF0055" },
+          size: 32
+        });
+
+        document.getElementById("remediation-box").classList.remove("hidden");
+        document.getElementById("gap-description").innerHTML = `You missed a prerequisite required for <b>${qData.concept}</b>.`;
+        document.getElementById("remediation-topic").innerText = qData.prerequisiteName;
+      }
+    }
+
+    function nextQuestion() {
+      if (currentCourse.quiz.length > 0) {
+        currentQuizIndex = (currentQuizIndex + 1) % currentCourse.quiz.length;
+        loadQuizQuestion();
+      }
+    }
+
+    function openIngestModal() { document.getElementById("ingest-modal").classList.remove("hidden"); }
+    function closeIngestModal() { document.getElementById("ingest-modal").classList.add("hidden"); }
+    
+    function processIngest() {
+      const rawText = document.getElementById("raw-text-input").value.trim();
+      closeIngestModal();
+
+      const newId = Date.now();
+      const title = rawText ? rawText.substring(0, 22) + "..." : "Custom Ingested Topic";
+
+      nodesDataSet.add({ 
+        id: newId, 
+        label: title, 
+        color: { background: "#00F2FE", border: "#38BDF8" } 
+      });
+
+      const firstNodeId = currentCourse.nodes[0].id;
+      edgesDataSet.add({ from: firstNodeId, to: newId, arrows: "to" });
+
+      document.getElementById("stat-nodes").innerText = nodesDataSet.length;
+      document.getElementById("stat-edges").innerText = edgesDataSet.length;
+      document.getElementById("raw-text-input").value = "";
+    }
+
+    window.onload = initGraph;
+  </script>
+</body>
+</html>
